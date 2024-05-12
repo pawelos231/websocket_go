@@ -7,7 +7,7 @@ import (
 	"net/http"
 )
 
-func WriteToConnection(conn net.Conn, res http.Response, size int) error {
+func WriteToConnection(conn net.Conn, res http.Response, size uint16) error {
 	var resBuf bytes.Buffer
 
 	if err := res.Write(&resBuf); err != nil {

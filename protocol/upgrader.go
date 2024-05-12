@@ -11,8 +11,8 @@ import (
 )
 
 type Upgrader struct {
-	ReadBufferSize    int
-	WriteBufferSize   int
+	ReadBufferSize    uint16
+	WriteBufferSize   uint16
 	EnableCompression bool
 }
 
