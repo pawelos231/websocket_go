@@ -30,20 +30,29 @@ MUST be selected randomly for each connection.
 */
 
 func main() {
-
+	// Check if a port argument is provided
 	args := os.Args[1:]
 	if len(args) == 0 {
 		panic("No arguments provided, must provide port")
 	}
 	port := args[0]
 
+	// Ensure the port starts with a colon (e.g., ":8080")
+	if port[0] != ':' {
+		port = ":" + port
+	}
+
 	upgrader := protocol.NewUpgrader()
 
+	// Create a new router
 	r := mux.NewRouter()
 	r.HandleFunc("/", api.CommonHandler(upgrader)).Methods("GET")
 
+	// Start the HTTP server
 	http.Handle("/", r)
-	fmt.Println("Server running on port: ", port)
-	http.ListenAndServe(port, nil)
-
+	fmt.Println("Server running on port", port)
+	err := http.ListenAndServe(port, nil)
+	if err != nil {
+		fmt.Println("Error starting server:", err)
+	}
 }

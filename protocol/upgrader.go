@@ -3,7 +3,6 @@ package protocol
 import (
 	"encoding/base64"
 	"fmt"
-	"net"
 	"net/http"
 	"ws_protocol/helpers"
 
@@ -25,6 +24,18 @@ func NewUpgrader() *Upgrader {
 	}
 }
 
+// registerError is a helper function to handle errors during WebSocket upgrade.
+func (upgrader *Upgrader) registerError(w http.ResponseWriter, status int, err error) (*WSConn, error) {
+	// Check if the error is a HeaderError
+	if herr, ok := err.(*HeaderError); ok {
+		http.Error(w, herr.Error(), herr.Code)
+	} else {
+		http.Error(w, fmt.Sprintf("Status: %v. Error during WebSocket upgrade: %v", http.StatusText(status), err), status)
+	}
+
+	return nil, err
+}
+
 // optional to add: Sec-WebSocket-Protocol, Sec-WebSocket-Extensions
 // https://datatracker.ietf.org/doc/html/rfc6455#section-4.2.2
 /*
@@ -40,29 +51,26 @@ func (upgrader *Upgrader) Upgrade(w http.ResponseWriter, r *http.Request) (*WSCo
 
 	for headerName, headerValue := range headers {
 		if err := upgrader.checkConnectionHeader(r, headerName, headerValue); err != nil {
-			upgrader.registerError(w, nil, err)
-			return nil, err
+			return upgrader.registerError(w, http.StatusInternalServerError, err)
 		}
 	}
 
 	//hijack response writer to get the underlying connection
 	hj, ok := w.(http.Hijacker)
 	if !ok {
-		upgrader.registerError(w, nil, fmt.Errorf("hijacking not supported"))
-		return nil, fmt.Errorf("hijacking not supported")
+		err := fmt.Errorf("hijacking not supported")
+		return upgrader.registerError(w, http.StatusInternalServerError, err)
 	}
 
 	conn, _, err := hj.Hijack()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return nil, err
+		return upgrader.registerError(w, http.StatusInternalServerError, err)
 	}
 
 	// Handle WebSocket handshake
 	key, err := upgrader.createSecWebsocketKey(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return nil, err
+		return upgrader.registerError(w, http.StatusInternalServerError, err)
 	}
 
 	//set response headers
@@ -78,8 +86,7 @@ func (upgrader *Upgrader) Upgrade(w http.ResponseWriter, r *http.Request) (*WSCo
 
 	err = helpers.WriteToConnection(conn, res, upgrader.WriteBufferSize)
 	if err != nil {
-		upgrader.registerError(w, conn, err)
-		return nil, err
+		return upgrader.registerError(w, http.StatusInternalServerError, err)
 
 	}
 
@@ -112,19 +119,4 @@ func (upgrader *Upgrader) checkConnectionHeader(r *http.Request, headerName stri
 		}
 	}
 	return nil
-}
-
-// registerError is a helper function to handle errors during WebSocket upgrade.
-func (upgrader *Upgrader) registerError(w http.ResponseWriter, conn net.Conn, err error) {
-	if herr, ok := err.(*HeaderError); ok {
-		http.Error(w, herr.Error(), herr.Code)
-	} else {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-	}
-
-	fmt.Printf("Error during WebSocket upgrade: %v\n", err)
-
-	if conn != nil {
-		conn.Close()
-	}
 }
