@@ -5,7 +5,7 @@ import "fmt"
 type CustomHeader struct {
 	value   string
 	toThrow error
-	code    int
+	status  int
 }
 
 type HeaderError struct {

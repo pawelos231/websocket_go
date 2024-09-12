@@ -16,7 +16,7 @@ func CommonHandler(upgrader *protocol.Upgrader) func(w http.ResponseWriter, r *h
 			return
 		}
 
-		defer WSConn.Conn.Close()
+		defer WSConn.NetConn().Close()
 
 		w.Write([]byte("Hello, World!"))
 	}

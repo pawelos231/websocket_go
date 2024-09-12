@@ -13,6 +13,7 @@ type Upgrader struct {
 	ReadBufferSize    uint16
 	WriteBufferSize   uint16
 	EnableCompression bool
+	CheckOrigin       func(r *http.Request) bool
 }
 
 // static for now
@@ -44,9 +45,9 @@ perform a TLS handshake over the connection.  If this fails
 */
 func (upgrader *Upgrader) Upgrade(w http.ResponseWriter, r *http.Request) (*WSConn, error) {
 	headers := map[string]CustomHeader{
-		"Connection":            {value: "Upgrade", toThrow: fmt.Errorf("connection header must be Upgrade"), code: http.StatusBadRequest},
-		"Upgrade":               {value: "websocket", toThrow: fmt.Errorf("upgrade header must be websocket"), code: http.StatusBadRequest},
-		"Sec-WebSocket-Version": {value: "13", toThrow: fmt.Errorf("Sec-WebSocket-Version must be 13"), code: http.StatusUpgradeRequired},
+		"Connection":            {value: "Upgrade", toThrow: fmt.Errorf("connection header must be Upgrade"), status: http.StatusBadRequest},
+		"Upgrade":               {value: "websocket", toThrow: fmt.Errorf("upgrade header must be websocket"), status: http.StatusBadRequest},
+		"Sec-WebSocket-Version": {value: "13", toThrow: fmt.Errorf("Sec-WebSocket-Version must be 13"), status: http.StatusUpgradeRequired},
 	}
 
 	for headerName, headerValue := range headers {
@@ -62,8 +63,24 @@ func (upgrader *Upgrader) Upgrade(w http.ResponseWriter, r *http.Request) (*WSCo
 		return upgrader.registerError(w, http.StatusInternalServerError, err)
 	}
 
-	conn, _, err := hj.Hijack()
+	//get the underlying connection
+	conn, bufrw, err := hj.Hijack()
 	if err != nil {
+		conn.Close()
+		return upgrader.registerError(w, http.StatusInternalServerError, err)
+	}
+
+	if bufrw.Reader.Buffered() > 0 {
+		conn.Close()
+		err := fmt.Errorf("data sent after handshake")
+		return upgrader.registerError(w, http.StatusBadRequest, err)
+	}
+
+	//create a websocket connection
+	c := CreateConn(conn, upgrader.ReadBufferSize, upgrader.WriteBufferSize, bufrw.Reader, make([]byte, upgrader.WriteBufferSize))
+	if c == nil {
+		conn.Close()
+		err := fmt.Errorf("failed to create websocket connection")
 		return upgrader.registerError(w, http.StatusInternalServerError, err)
 	}
 
@@ -90,7 +107,7 @@ func (upgrader *Upgrader) Upgrade(w http.ResponseWriter, r *http.Request) (*WSCo
 
 	}
 
-	return &WSConn{Conn: conn}, nil
+	return c, nil
 
 }
 
@@ -115,7 +132,7 @@ func (upgrader *Upgrader) checkConnectionHeader(r *http.Request, headerName stri
 		return &HeaderError{
 			HeaderName: headerName,
 			Message:    headerContent.toThrow.Error(),
-			Code:       headerContent.code,
+			Code:       headerContent.status,
 		}
 	}
 	return nil
